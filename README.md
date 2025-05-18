@@ -1,2 +1,1 @@
-# awesome-backend
-Backend for Deb's Awesome Pawsome website
+# Debbie's Awesome Pawsome Backend
