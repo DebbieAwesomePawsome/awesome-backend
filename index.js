@@ -18,7 +18,7 @@ app.use(express.json()); // To parse JSON request bodies
 
 // Root route
 app.get('/', (req, res) => {
-  res.json({ message: "Debbie's Awesome Pawsome backend is running!" });
+  res.json({ message: "Debbie's Awesome Pawsome backend is running at the moment!" });
 });
 
 // Health check route
