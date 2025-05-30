@@ -42,7 +42,7 @@ app.get('/api/services', async (req, res) => {
 
 // Start the server
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`Server is currently running on port ${PORT}`);
   // The "DB: PostgreSQL connected successfully..." message from db.js should also appear here
   // shortly after startup if the import of db.js triggers its connection test.
 });
