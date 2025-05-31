@@ -84,6 +84,30 @@ app.get('/api/services', async (req, res) => {
   }
 });
 
+// GET /api/services/:id - Fetch a single service by its ID
+app.get('/api/services/:id', async (req, res) => {
+  const serviceId = parseInt(req.params.id, 10);
+
+  if (isNaN(serviceId)) {
+    return res.status(400).json({ error: 'Invalid service ID format.' });
+  }
+
+  try {
+    const result = await db.query(
+      'SELECT id, name, price_string, description, category FROM services WHERE id = $1',
+      [serviceId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Service not found.' });
+    }
+    res.json({ service: result.rows[0] }); // Send back the single service
+  } catch (err) {
+    console.error(`Error fetching service ID ${serviceId} from DB:`, err.stack);
+    res.status(500).json({ error: 'Failed to fetch service from database.' });
+  }
+});
+
 // POST /api/services - Create a new service
 // Ensure this is placed before app.listen()
 // You should already have `app.use(express.json());` middleware defined near the top of your file
