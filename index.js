@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import db from './db.js'; // Make sure this path is correct if db.js is elsewhere
+import { verifyAdminCredentials, generateToken, authenticateAdmin } from './auth.js'; // <--- Authentication details
 
 dotenv.config();
 
@@ -26,6 +27,49 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+
+// Admin login endpoint
+app.post('/api/auth/admin/login', async (req, res) => {
+  // The `async` keyword isn't strictly necessary here since bcrypt.compareSync is synchronous,
+  // but it doesn't hurt and keeps consistency if you later add async operations.
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password are required.' });
+    }
+
+    // Verify credentials using the helper from auth.js
+    // Remember your ADMIN_USERNAME in .env is 'debbie' (or whatever you set)
+    if (verifyAdminCredentials(username, password)) {
+      // Credentials are valid, generate a token
+      const adminData = {
+        username: username, // or process.env.ADMIN_USERNAME
+        role: 'admin',
+        loginTime: new Date().toISOString() // Optional: include login time in token
+      };
+      const token = generateToken(adminData);
+
+      if (token) {
+        res.json({
+          message: 'Admin login successful!',
+          token: token,
+          user: { username: adminData.username, role: adminData.role }
+        });
+      } else {
+        // This would happen if JWT_SECRET was missing, which auth.js logs
+        res.status(500).json({ error: 'Could not generate token due to server configuration issue.' });
+      }
+    } else {
+      // Invalid credentials
+      res.status(401).json({ error: 'Invalid username or password.' });
+    }
+  } catch (error) {
+    console.error('Admin login route error:', error);
+    res.status(500).json({ error: 'Admin login failed due to an internal server error.' });
+  }
+});
+
 // Services route - NOW FETCHES FROM DATABASE
 app.get('/api/services', async (req, res) => {
   try {
@@ -45,7 +89,7 @@ app.get('/api/services', async (req, res) => {
 // You should already have `app.use(express.json());` middleware defined near the top of your file
 // to parse JSON request bodies.
 
-app.post('/api/services', async (req, res) => {
+app.post('/api/services', authenticateAdmin, async (req, res) => {
   const { name, price_string, description, category } = req.body;
 
   // Basic validation: Ensure 'name' is provided
@@ -75,7 +119,7 @@ app.post('/api/services', async (req, res) => {
 // PUT /api/services/:id - Update an existing service
 // Ensure this is placed before app.listen()
 
-app.put('/api/services/:id', async (req, res) => {
+app.put('/api/services/:id', authenticateAdmin, async (req, res) => {
   const serviceId = parseInt(req.params.id, 10);
   const { name, price_string, description, category } = req.body;
 
@@ -138,7 +182,7 @@ app.put('/api/services/:id', async (req, res) => {
 // DELETE /api/services/:id - Delete a service
 // Ensure this is placed before app.listen()
 
-app.delete('/api/services/:id', async (req, res) => {
+app.delete('/api/services/:id', authenticateAdmin, async (req, res) => {
   const serviceId = parseInt(req.params.id, 10);
 
   if (isNaN(serviceId)) {
