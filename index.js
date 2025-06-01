@@ -4,7 +4,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import db from './db.js'; // Make sure this path is correct if db.js is elsewhere
 import { verifyAdminCredentials, generateToken, authenticateAdmin } from './auth.js'; // <--- Authentication details
-import nodemailer from 'nodemailer'; // <<< ADD THIS IMPORT
+import { ServerClient as PostmarkClient } from 'postmark'; // <<< ADD THIS
 
 dotenv.config();
 
@@ -293,7 +293,10 @@ app.delete('/api/services/:id', authenticateAdmin, async (req, res) => {
 });
 
 
-// POST /api/booking-request - Handle new booking requests from users
+// backend/index.js
+// ... (after your other app.get, app.post, app.put, app.delete routes for services) ...
+
+// POST /api/booking-request - Handle new booking requests using Postmark
 app.post('/api/booking-request', async (req, res) => {
   const {
     customerName,
@@ -306,38 +309,27 @@ app.post('/api/booking-request', async (req, res) => {
     notes
   } = req.body;
 
-  // --- Basic Server-Side Validation ---
+  // Basic Server-Side Validation
   if (!customerName || !customerEmail || !petName || !serviceName || !preferredDateTime) {
     return res.status(400).json({
       success: false,
       error: 'Please fill in all required fields: Your Name, Email, Pet Name(s), Service, and Preferred Date/Time.'
     });
   }
-  // Consider adding more specific validation, e.g., for email format.
 
-  // --- Nodemailer Transporter Configuration ---
-  // Ensure your .env file has:
-  // EMAIL_SERVICE_HOST (e.g., smtp.gmail.com)
-  // EMAIL_SERVICE_PORT (e.g., 587 or 465)
-  // EMAIL_USER (your Gmail address: ranjan.chaudhuri@gmail.com)
-  // EMAIL_PASS (your 16-character Gmail App Password, no spaces)
-  // RECIPIENT_EMAIL_ADDRESS (where booking requests go: ranjan@chaudhurisolutions.com for now)
-  const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_SERVICE_HOST,
-    port: parseInt(process.env.EMAIL_SERVICE_PORT || '587', 10),
-    secure: parseInt(process.env.EMAIL_SERVICE_PORT || '587', 10) === 465, // true if port is 465, false for 587 (TLS)
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
+  // Check for essential Postmark .env variables
+  if (!process.env.POSTMARK_SERVER_TOKEN || !process.env.SENDER_SIGNATURE_EMAIL || !process.env.RECIPIENT_EMAIL_ADDRESS) {
+    console.error('Postmark configuration missing in .env file. Check POSTMARK_SERVER_TOKEN, SENDER_SIGNATURE_EMAIL, RECIPIENT_EMAIL_ADDRESS.');
+    return res.status(500).json({ success: false, error: 'Email service configuration error on server.' });
+  }
+  
+  const postmarkClient = new PostmarkClient(process.env.POSTMARK_SERVER_TOKEN);
 
-  // --- Email Content for Recipient (Debbie/Your Test Account) ---
-  const mailToRecipientOptions = {
-    from: `"Debbie's Pawsome Site Request" <${process.env.EMAIL_USER}>`, // Sender displayed name
-    to: process.env.RECIPIENT_EMAIL_ADDRESS,
-    subject: `New Booking Request: ${serviceName} for ${customerName}`,
-    html: `
+  const messageToRecipient = {
+    "From": process.env.SENDER_SIGNATURE_EMAIL, // Must be a verified Sender Signature
+    "To": process.env.RECIPIENT_EMAIL_ADDRESS,
+    "Subject": `New Booking Request: ${serviceName} for ${customerName}`,
+    "HtmlBody": `
       <h2>New Booking Request Details:</h2>
       <p><strong>Customer Name:</strong> ${customerName}</p>
       <p><strong>Customer Email:</strong> <a href="mailto:${customerEmail}">${customerEmail}</a></p>
@@ -352,15 +344,15 @@ app.post('/api/booking-request', async (req, res) => {
       <pre style="white-space: pre-wrap; word-wrap: break-word;">${notes || 'None'}</pre>
       <hr>
       <p><em>Please follow up with ${customerName}.</em></p>
-    `
+    `,
+    "MessageStream": "outbound" // Use "outbound" for transactional, or your specific stream if configured
   };
 
-  // --- Optional: Email Content for User Confirmation ---
-  const mailToUserOptions = {
-    from: `"Debbie's Pawsome Care" <${process.env.EMAIL_USER}>`,
-    to: customerEmail,
-    subject: `We've Received Your Booking Request for "${serviceName}"!`,
-    html: `
+  const messageToUser = {
+    "From": process.env.SENDER_SIGNATURE_EMAIL,
+    "To": customerEmail,
+    "Subject": `We've Received Your Booking Request for "${serviceName}"!`,
+    "HtmlBody": `
       <p>Hi ${customerName},</p>
       <p>Thank you for your booking request for the service: <strong>${serviceName}</strong>.</p>
       <p>Your preferred date/time was noted as: ${preferredDateTime}.</p>
@@ -379,34 +371,38 @@ app.post('/api/booking-request', async (req, res) => {
       <p>If your request is urgent, or if you don't hear from us within 48 hours, please don't hesitate to check your spam folder or contact us directly.</p>
       <p>Best regards,</p>
       <p>The Team at Debbie's Pawsome Care</p>
-    `
+    `,
+    "MessageStream": "outbound"
   };
 
   try {
-    // Send email to the main recipient (Debbie/your test address)
-    let infoRecipient = await transporter.sendMail(mailToRecipientOptions);
-    console.log('Booking request email sent to recipient: %s', infoRecipient.messageId);
+    await postmarkClient.sendEmail(messageToRecipient);
+    console.log('Booking request email sent to recipient via Postmark.');
 
-    // Attempt to send confirmation email to the user
     try {
-      let infoUser = await transporter.sendMail(mailToUserOptions);
-      console.log('Confirmation email sent to user: %s', infoUser.messageId);
+      await postmarkClient.sendEmail(messageToUser);
+      console.log('Confirmation email sent to user via Postmark.');
     } catch (userEmailError) {
-      console.error('Failed to send confirmation email to user:', userEmailError);
-      // Log this error, but don't make the overall request fail if only this email fails.
+      console.error('Postmark: Failed to send confirmation email to user:', userEmailError);
     }
 
     res.status(200).json({ success: true, message: 'Booking request sent successfully! We will be in touch soon.' });
 
   } catch (error) {
-    console.error('Error sending booking request email with Nodemailer:', error);
-    if (error.code === 'EAUTH' || error.responseCode === 535 || (error.command && error.command.includes('AUTH'))) {
-        console.error('SMTP Authentication Error. Double-check EMAIL_USER and EMAIL_PASS in .env. Ensure App Password for Gmail is correct (16 characters, no spaces) and that the sending account is correctly configured for SMTP access.');
-    }
-    res.status(500).json({ success: false, error: 'Failed to send booking request. Please try again later or contact us directly if the issue persists.' });
+    console.error('Postmark: Error sending booking request email:', error);
+    // Postmark errors often have more details in error.response.data (for HTTP errors) or error.message
+    const errorMessage = error.response && error.response.body && error.response.body.Message 
+                       ? error.response.body.Message 
+                       : error.message;
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to send booking request due to an email service error. Please try again later.',
+      details: errorMessage // Optional: for debugging
+    });
   }
 });
 
+// ... app.listen() ...
 
 
 // Start the server
