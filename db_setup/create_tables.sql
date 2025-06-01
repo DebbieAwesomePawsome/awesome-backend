@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS services (
     price_string VARCHAR(100),
     description TEXT,
     category VARCHAR(100) DEFAULT 'Regular',
+    sort_order INTEGER,                  -- <<< ADD THIS LINE HERE
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -57,6 +58,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Optional: Create a trigger to use the function (if the table was just created)
+
 -- If the table already exists and you want to add this trigger, you might need to drop an old one first.
 DO $$
 BEGIN
