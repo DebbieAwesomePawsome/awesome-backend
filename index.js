@@ -71,13 +71,15 @@ app.post('/api/auth/admin/login', async (req, res) => {
 });
 
 // Services route - NOW FETCHES FROM DATABASE
+// Services route - Fetches from database and orders by sort_order
 app.get('/api/services', async (req, res) => {
   try {
     const result = await db.query(
-      'SELECT id, name, price_string, description, category FROM services ORDER BY category, id'
+      // Select the sort_order column and order by it, then by id as a fallback
+      'SELECT id, name, price_string, description, category, sort_order FROM services ORDER BY sort_order ASC, id ASC'
     );
     // The structure { services: result.rows } matches what your frontend expects
-    res.json({ services: result.rows }); 
+    res.json({ services: result.rows });
   } catch (err) {
     console.error('Error fetching services from DB:', err.stack);
     res.status(500).json({ error: 'Failed to fetch services from database.' });
@@ -113,25 +115,40 @@ app.get('/api/services/:id', async (req, res) => {
 // You should already have `app.use(express.json());` middleware defined near the top of your file
 // to parse JSON request bodies.
 
+// backend/index.js
+
+// POST /api/services - Create a new service
 app.post('/api/services', authenticateAdmin, async (req, res) => {
   const { name, price_string, description, category } = req.body;
 
-  // Basic validation: Ensure 'name' is provided
   if (!name) {
     return res.status(400).json({ error: 'Service name is required.' });
   }
-  // You could add more validation here for other fields if needed
 
   try {
+    // 1. Get the current maximum sort_order
+    const maxOrderResult = await db.query('SELECT MAX(sort_order) as max_sort_order FROM services');
+    let newSortOrder = 0;
+    if (maxOrderResult.rows.length > 0 && maxOrderResult.rows[0].max_sort_order !== null) {
+      newSortOrder = maxOrderResult.rows[0].max_sort_order + 1;
+    }
+
+    // 2. Insert the new service with the calculated sort_order
     const newService = await db.query(
-      `INSERT INTO services (name, price_string, description, category) 
-       VALUES ($1, $2, $3, $4) 
-       RETURNING *`, // RETURNING * will return the newly created row
-      [name, price_string || null, description || null, category || 'Regular'] // Use null for optional fields if they are empty or not provided
+      `INSERT INTO services (name, price_string, description, category, sort_order)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`, // RETURNING * will return the newly created row including id and sort_order
+      [
+        name,
+        price_string || null,
+        description || null,
+        category || 'Regular',
+        newSortOrder // Add the newSortOrder here
+      ]
     );
 
-    res.status(201).json({ 
-      message: 'Service created successfully', 
+    res.status(201).json({
+      message: 'Service created successfully',
       service: newService.rows[0] // The new service record from the DB
     });
   } catch (err) {
@@ -140,6 +157,44 @@ app.post('/api/services', authenticateAdmin, async (req, res) => {
   }
 });
 
+
+// PUT /api/services/order - Reorder services
+app.put('/api/services/order', authenticateAdmin, async (req, res) => {
+  const { orderedIds } = req.body; // Expecting an array of service IDs in the new desired order
+
+  if (!Array.isArray(orderedIds) || orderedIds.some(id => typeof id !== 'number')) {
+    return res.status(400).json({ error: 'Invalid input: orderedIds must be an array of numbers.' });
+  }
+
+  if (orderedIds.length === 0) {
+    // Technically not an error, but nothing to do.
+    return res.json({ message: 'No services to reorder.' });
+  }
+
+  const client = await db.getClient(); // Get a client from the pool for transaction
+
+  try {
+    await client.query('BEGIN'); // Start transaction
+
+    // Create an array of promises for all update operations
+    const updatePromises = orderedIds.map((serviceId, index) => {
+      const newSortOrder = index; // The new sort_order is the index in the array
+      return client.query('UPDATE services SET sort_order = $1 WHERE id = $2', [newSortOrder, serviceId]);
+    });
+
+    await Promise.all(updatePromises); // Execute all updates
+
+    await client.query('COMMIT'); // Commit transaction
+    res.json({ message: 'Services reordered successfully.' });
+
+  } catch (err) {
+    await client.query('ROLLBACK'); // Rollback transaction on error
+    console.error('Error reordering services:', err.stack);
+    res.status(500).json({ error: 'Failed to reorder services.' });
+  } finally {
+    client.release(); // Release client back to the pool
+  }
+});
 // PUT /api/services/:id - Update an existing service
 // Ensure this is placed before app.listen()
 

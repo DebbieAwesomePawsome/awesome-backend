@@ -37,5 +37,5 @@ pool.connect((err, client, release) => {
 export default {
   query: (text, params) => pool.query(text, params),
   // You could add a getClient function here if you need to manage transactions manually later
-  // getClient: () => pool.connect(),
+  getClient: () => pool.connect(),
 };
