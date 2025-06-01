@@ -4,6 +4,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import db from './db.js'; // Make sure this path is correct if db.js is elsewhere
 import { verifyAdminCredentials, generateToken, authenticateAdmin } from './auth.js'; // <--- Authentication details
+import nodemailer from 'nodemailer'; // <<< ADD THIS IMPORT
 
 dotenv.config();
 
@@ -290,6 +291,123 @@ app.delete('/api/services/:id', authenticateAdmin, async (req, res) => {
     res.status(500).json({ error: 'Failed to delete service from database.' });
   }
 });
+
+
+// POST /api/booking-request - Handle new booking requests from users
+app.post('/api/booking-request', async (req, res) => {
+  const {
+    customerName,
+    customerEmail,
+    customerPhone,
+    petName,
+    petType,
+    serviceName,
+    preferredDateTime,
+    notes
+  } = req.body;
+
+  // --- Basic Server-Side Validation ---
+  if (!customerName || !customerEmail || !petName || !serviceName || !preferredDateTime) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please fill in all required fields: Your Name, Email, Pet Name(s), Service, and Preferred Date/Time.'
+    });
+  }
+  // Consider adding more specific validation, e.g., for email format.
+
+  // --- Nodemailer Transporter Configuration ---
+  // Ensure your .env file has:
+  // EMAIL_SERVICE_HOST (e.g., smtp.gmail.com)
+  // EMAIL_SERVICE_PORT (e.g., 587 or 465)
+  // EMAIL_USER (your Gmail address: ranjan.chaudhuri@gmail.com)
+  // EMAIL_PASS (your 16-character Gmail App Password, no spaces)
+  // RECIPIENT_EMAIL_ADDRESS (where booking requests go: ranjan@chaudhurisolutions.com for now)
+  const transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_SERVICE_HOST,
+    port: parseInt(process.env.EMAIL_SERVICE_PORT || '587', 10),
+    secure: parseInt(process.env.EMAIL_SERVICE_PORT || '587', 10) === 465, // true if port is 465, false for 587 (TLS)
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  // --- Email Content for Recipient (Debbie/Your Test Account) ---
+  const mailToRecipientOptions = {
+    from: `"Debbie's Pawsome Site Request" <${process.env.EMAIL_USER}>`, // Sender displayed name
+    to: process.env.RECIPIENT_EMAIL_ADDRESS,
+    subject: `New Booking Request: ${serviceName} for ${customerName}`,
+    html: `
+      <h2>New Booking Request Details:</h2>
+      <p><strong>Customer Name:</strong> ${customerName}</p>
+      <p><strong>Customer Email:</strong> <a href="mailto:${customerEmail}">${customerEmail}</a></p>
+      <p><strong>Customer Phone:</strong> ${customerPhone || 'Not provided'}</p>
+      <hr>
+      <p><strong>Pet Name(s):</strong> ${petName}</p>
+      <p><strong>Pet Type:</strong> ${petType || 'Not specified'}</p>
+      <hr>
+      <p><strong>Service Interested In:</strong> ${serviceName}</p>
+      <p><strong>Preferred Date/Time:</strong> ${preferredDateTime}</p>
+      <p><strong>Additional Notes/Special Requirements:</strong></p>
+      <pre style="white-space: pre-wrap; word-wrap: break-word;">${notes || 'None'}</pre>
+      <hr>
+      <p><em>Please follow up with ${customerName}.</em></p>
+    `
+  };
+
+  // --- Optional: Email Content for User Confirmation ---
+  const mailToUserOptions = {
+    from: `"Debbie's Pawsome Care" <${process.env.EMAIL_USER}>`,
+    to: customerEmail,
+    subject: `We've Received Your Booking Request for "${serviceName}"!`,
+    html: `
+      <p>Hi ${customerName},</p>
+      <p>Thank you for your booking request for the service: <strong>${serviceName}</strong>.</p>
+      <p>Your preferred date/time was noted as: ${preferredDateTime}.</p>
+      <p>We have received your details and will aim to get back to you within 24-48 hours to confirm availability and discuss the next steps.</p>
+      <p><strong>Your provided information:</strong></p>
+      <ul style="list-style-type: none; padding-left: 0;">
+        <li><strong>Name:</strong> ${customerName}</li>
+        <li><strong>Email:</strong> ${customerEmail}</li>
+        <li><strong>Phone:</strong> ${customerPhone || 'Not provided'}</li>
+        <li><strong>Pet Name(s):</strong> ${petName}</li>
+        <li><strong>Pet Type:</strong> ${petType || 'Not specified'}</li>
+        <li><strong>Service:</strong> ${serviceName}</li>
+        <li><strong>Preferred Date/Time:</strong> ${preferredDateTime}</li>
+        <li><strong>Notes:</strong> <pre style="white-space: pre-wrap; word-wrap: break-word;">${notes || 'None'}</pre></li>
+      </ul>
+      <p>If your request is urgent, or if you don't hear from us within 48 hours, please don't hesitate to check your spam folder or contact us directly.</p>
+      <p>Best regards,</p>
+      <p>The Team at Debbie's Pawsome Care</p>
+    `
+  };
+
+  try {
+    // Send email to the main recipient (Debbie/your test address)
+    let infoRecipient = await transporter.sendMail(mailToRecipientOptions);
+    console.log('Booking request email sent to recipient: %s', infoRecipient.messageId);
+
+    // Attempt to send confirmation email to the user
+    try {
+      let infoUser = await transporter.sendMail(mailToUserOptions);
+      console.log('Confirmation email sent to user: %s', infoUser.messageId);
+    } catch (userEmailError) {
+      console.error('Failed to send confirmation email to user:', userEmailError);
+      // Log this error, but don't make the overall request fail if only this email fails.
+    }
+
+    res.status(200).json({ success: true, message: 'Booking request sent successfully! We will be in touch soon.' });
+
+  } catch (error) {
+    console.error('Error sending booking request email with Nodemailer:', error);
+    if (error.code === 'EAUTH' || error.responseCode === 535 || (error.command && error.command.includes('AUTH'))) {
+        console.error('SMTP Authentication Error. Double-check EMAIL_USER and EMAIL_PASS in .env. Ensure App Password for Gmail is correct (16 characters, no spaces) and that the sending account is correctly configured for SMTP access.');
+    }
+    res.status(500).json({ success: false, error: 'Failed to send booking request. Please try again later or contact us directly if the issue persists.' });
+  }
+});
+
+
 
 // Start the server
 app.listen(PORT, () => {
