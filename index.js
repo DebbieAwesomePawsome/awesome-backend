@@ -402,6 +402,94 @@ app.post('/api/booking-request', async (req, res) => {
   }
 });
 
+
+// POST /api/general-enquiry - Handle general contact form submissions
+app.post('/api/general-enquiry', async (req, res) => {
+  const {
+    name,       // Sender's Name
+    email,      // Sender's Email
+    subject,    // Optional subject
+    message     // The enquiry message
+  } = req.body;
+
+  // Basic Server-Side Validation
+  if (!name || !email || !message) {
+    return res.status(400).json({
+      success: false,
+      error: 'Please fill in all required fields: Your Name, Email, and Message.'
+    });
+  }
+  if (!/\S+@\S+\.\S+/.test(email)) { // Basic email format check
+      return res.status(400).json({ success: false, error: 'Please provide a valid email address.' });
+  }
+
+  // Ensure Postmark .env variables are present
+  if (!process.env.POSTMARK_SERVER_TOKEN || !process.env.SENDER_SIGNATURE_EMAIL || !process.env.RECIPIENT_EMAIL_ADDRESS) {
+    console.error('Postmark configuration missing in .env file for general enquiry. Check POSTMARK_SERVER_TOKEN, SENDER_SIGNATURE_EMAIL, RECIPIENT_EMAIL_ADDRESS.');
+    return res.status(500).json({ success: false, error: 'Email service configuration error on server.' });
+  }
+  
+  const postmarkClient = new PostmarkClient(process.env.POSTMARK_SERVER_TOKEN);
+
+  const mailToRecipientOptions = {
+    "From": process.env.SENDER_SIGNATURE_EMAIL,
+    "To": process.env.RECIPIENT_EMAIL_ADDRESS,
+    "Subject": `General Enquiry: ${subject || 'From ' + name}`,
+    "HtmlBody": `
+      <h2>New General Enquiry:</h2>
+      <p><strong>From:</strong> ${name} (<a href="mailto:${email}">${email}</a>)</p>
+      <p><strong>Subject:</strong> ${subject || 'Not provided'}</p>
+      <hr>
+      <p><strong>Message:</strong></p>
+      <pre style="white-space: pre-wrap; word-wrap: break-word;">${message}</pre>
+      <hr>
+      <p><em>Received via website general enquiry form.</em></p>
+    `,
+    "MessageStream": "outbound" 
+  };
+
+  const mailToUserOptions = {
+    "From": process.env.SENDER_SIGNATURE_EMAIL,
+    "To": email,
+    "Subject": "We've Received Your Enquiry - Debbie's Pawsome Care",
+    "HtmlBody": `
+      <p>Hi ${name},</p>
+      <p>Thank you for reaching out to Debbie's Awesome Pawsome Care!</p>
+      <p>We have received your enquiry${subject ? ` regarding "${subject}"` : ''} and will get back to you as soon as possible.</p>
+      <p>If your matter is urgent, please allow up to 24-48 hours for a response, especially during busy periods.</p>
+      <p>Best regards,</p>
+      <p>The Team at Debbie's Pawsome Care</p>
+    `,
+    "MessageStream": "outbound"
+  };
+
+  try {
+    await postmarkClient.sendEmail(mailToRecipientOptions);
+    console.log('General enquiry email sent to recipient via Postmark.');
+
+    try {
+        await postmarkClient.sendEmail(mailToUserOptions);
+        console.log('General enquiry confirmation sent to user via Postmark.');
+    } catch (userEmailError) {
+        console.error('Postmark: Failed to send general enquiry confirmation to user:', userEmailError);
+    }
+
+    res.status(200).json({ success: true, message: 'Your enquiry has been sent successfully! We will be in touch.' });
+
+  } catch (error) {
+    console.error('Postmark: Error sending general enquiry email:', error);
+    const errorMessage = error.response && error.response.body && error.response.body.Message 
+                       ? error.response.body.Message 
+                       : error.message;
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to send your enquiry due to an email service error.',
+      details: errorMessage 
+    });
+  }
+});
+
+
 // ... app.listen() ...
 
 
