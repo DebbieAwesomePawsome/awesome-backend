@@ -297,41 +297,44 @@ app.delete('/api/services/:id', authenticateAdmin, async (req, res) => {
 // ... (after your other app.get, app.post, app.put, app.delete routes for services) ...
 
 // POST /api/booking-request - Handle new booking requests using Postmark
+// In backend/index.js
+
 app.post('/api/booking-request', async (req, res) => {
+  console.log('--- Booking Request ---'); 
+  console.log('Received req.body for booking:', req.body);
+  
   const {
-    customerName,
-    customerEmail,
-    customerPhone,
-    petName,
-    petType,
-    serviceName,
-    preferredDateTime,
-    notes,
-    hp_fill_if_bot
+    customerName, customerEmail, customerPhone,
+    petName, petType, serviceName,
+    preferredDateTime, notes,
+    referralSource, // <<< Ensure this is destructured
+    hp_fill_if_bot 
   } = req.body;
+
   if (hp_fill_if_bot) {
     console.log('Honeypot field filled for booking request. Likely spam. Request from:', customerEmail || 'unknown email');
-    // Return a generic success-like response to not alert the bot
     return res.status(200).json({ success: true, message: 'Request received.' }); 
   }
-  // Basic Server-Side Validation
+
   if (!customerName || !customerEmail || !petName || !serviceName || !preferredDateTime) {
-    return res.status(400).json({
+    return res.status(400).json({ 
       success: false,
-      error: 'Please fill in all required fields: Your Name, Email, Pet Name(s), Service, and Preferred Date/Time.'
+      error: 'Please fill in all required fields: Your Name, Email, Pet Name(s), Service, and Preferred Date/Time.' 
     });
   }
+  if (!/\S+@\S+\.\S+/.test(customerEmail)) {
+      return res.status(400).json({ success: false, error: 'Please provide a valid email address.' });
+  }
 
-  // Check for essential Postmark .env variables
   if (!process.env.POSTMARK_SERVER_TOKEN || !process.env.SENDER_SIGNATURE_EMAIL || !process.env.RECIPIENT_EMAIL_ADDRESS) {
-    console.error('Postmark configuration missing in .env file. Check POSTMARK_SERVER_TOKEN, SENDER_SIGNATURE_EMAIL, RECIPIENT_EMAIL_ADDRESS.');
+    console.error('Postmark configuration missing in .env file for booking request.');
     return res.status(500).json({ success: false, error: 'Email service configuration error on server.' });
   }
   
   const postmarkClient = new PostmarkClient(process.env.POSTMARK_SERVER_TOKEN);
 
-  const messageToRecipient = {
-    "From": process.env.SENDER_SIGNATURE_EMAIL, // Must be a verified Sender Signature
+  const mailToRecipientOptions = {
+    "From": process.env.SENDER_SIGNATURE_EMAIL,
     "To": process.env.RECIPIENT_EMAIL_ADDRESS,
     "Subject": `New Booking Request: ${serviceName} for ${customerName}`,
     "HtmlBody": `
@@ -345,15 +348,17 @@ app.post('/api/booking-request', async (req, res) => {
       <hr>
       <p><strong>Service Interested In:</strong> ${serviceName}</p>
       <p><strong>Preferred Date/Time:</strong> ${preferredDateTime}</p>
+      {/* VVVV ADDED THIS LINE for referralSource VVVV */}
+      <p><strong>How they heard about us:</strong> ${referralSource || 'Not specified'}</p>
       <p><strong>Additional Notes/Special Requirements:</strong></p>
       <pre style="white-space: pre-wrap; word-wrap: break-word;">${notes || 'None'}</pre>
       <hr>
       <p><em>Please follow up with ${customerName}.</em></p>
     `,
-    "MessageStream": "outbound" // Use "outbound" for transactional, or your specific stream if configured
+    "MessageStream": "outbound" 
   };
 
-  const messageToUser = {
+  const mailToUserOptions = {
     "From": process.env.SENDER_SIGNATURE_EMAIL,
     "To": customerEmail,
     "Subject": `We've Received Your Booking Request for "${serviceName}"!`,
@@ -371,6 +376,8 @@ app.post('/api/booking-request', async (req, res) => {
         <li><strong>Pet Type:</strong> ${petType || 'Not specified'}</li>
         <li><strong>Service:</strong> ${serviceName}</li>
         <li><strong>Preferred Date/Time:</strong> ${preferredDateTime}</li>
+        {/* VVVV OPTIONAL: Added referralSource to user confirmation email VVVV */}
+        ${referralSource ? `<li><strong>How you heard about us:</strong> ${referralSource}</li>` : ''}
         <li><strong>Notes:</strong> <pre style="white-space: pre-wrap; word-wrap: break-word;">${notes || 'None'}</pre></li>
       </ul>
       <p>If your request is urgent, or if you don't hear from us within 48 hours, please don't hesitate to check your spam folder or contact us directly.</p>
@@ -379,13 +386,13 @@ app.post('/api/booking-request', async (req, res) => {
     `,
     "MessageStream": "outbound"
   };
-
+  
   try {
-    await postmarkClient.sendEmail(messageToRecipient);
+    await postmarkClient.sendEmail(mailToRecipientOptions);
     console.log('Booking request email sent to recipient via Postmark.');
 
     try {
-      await postmarkClient.sendEmail(messageToUser);
+      await postmarkClient.sendEmail(mailToUserOptions);
       console.log('Confirmation email sent to user via Postmark.');
     } catch (userEmailError) {
       console.error('Postmark: Failed to send confirmation email to user:', userEmailError);
@@ -395,14 +402,13 @@ app.post('/api/booking-request', async (req, res) => {
 
   } catch (error) {
     console.error('Postmark: Error sending booking request email:', error);
-    // Postmark errors often have more details in error.response.data (for HTTP errors) or error.message
     const errorMessage = error.response && error.response.body && error.response.body.Message 
                        ? error.response.body.Message 
                        : error.message;
     res.status(500).json({ 
       success: false, 
       error: 'Failed to send booking request due to an email service error. Please try again later.',
-      details: errorMessage // Optional: for debugging
+      details: errorMessage 
     });
   }
 });
@@ -410,33 +416,32 @@ app.post('/api/booking-request', async (req, res) => {
 
 // POST /api/general-enquiry - Handle general contact form submissions
 app.post('/api/general-enquiry', async (req, res) => {
+  console.log('--- General Enquiry ---');
+  console.log('Received req.body for enquiry:', req.body);
+
   const {
-    name,       // Sender's Name
-    email,      // Sender's Email
-    subject,    // Optional subject
-    message,  // The main message content
-     hp_fill_if_bot // Honeypot field to catch bots
+    name, email, subject, message,
+    referralSource, // <<< Ensure this is destructured
+    hp_fill_if_bot
   } = req.body;
-  // <<< NEW: Honeypot Check >>>
+
   if (hp_fill_if_bot) {
     console.log('Honeypot field filled for general enquiry. Likely spam. Request from:', email || 'unknown email');
-    // Return a generic success-like response
     return res.status(200).json({ success: true, message: 'Enquiry received.' });
   }
-  // Basic Server-Side Validation
+
   if (!name || !email || !message) {
     return res.status(400).json({
       success: false,
       error: 'Please fill in all required fields: Your Name, Email, and Message.'
     });
   }
-  if (!/\S+@\S+\.\S+/.test(email)) { // Basic email format check
+  if (!/\S+@\S+\.\S+/.test(email)) {
       return res.status(400).json({ success: false, error: 'Please provide a valid email address.' });
   }
 
-  // Ensure Postmark .env variables are present
   if (!process.env.POSTMARK_SERVER_TOKEN || !process.env.SENDER_SIGNATURE_EMAIL || !process.env.RECIPIENT_EMAIL_ADDRESS) {
-    console.error('Postmark configuration missing in .env file for general enquiry. Check POSTMARK_SERVER_TOKEN, SENDER_SIGNATURE_EMAIL, RECIPIENT_EMAIL_ADDRESS.');
+    console.error('Postmark configuration missing in .env file for general enquiry.');
     return res.status(500).json({ success: false, error: 'Email service configuration error on server.' });
   }
   
@@ -450,6 +455,8 @@ app.post('/api/general-enquiry', async (req, res) => {
       <h2>New General Enquiry:</h2>
       <p><strong>From:</strong> ${name} (<a href="mailto:${email}">${email}</a>)</p>
       <p><strong>Subject:</strong> ${subject || 'Not provided'}</p>
+      {/* VVVV ADDED THIS LINE for referralSource VVVV */}
+      <p><strong>How they heard about us:</strong> ${referralSource || 'Not specified'}</p>
       <hr>
       <p><strong>Message:</strong></p>
       <pre style="white-space: pre-wrap; word-wrap: break-word;">${message}</pre>
@@ -461,12 +468,14 @@ app.post('/api/general-enquiry', async (req, res) => {
 
   const mailToUserOptions = {
     "From": process.env.SENDER_SIGNATURE_EMAIL,
-    "To": email,
+    "To": email, 
     "Subject": "We've Received Your Enquiry - Debbie's Pawsome Care",
     "HtmlBody": `
       <p>Hi ${name},</p>
       <p>Thank you for reaching out to Debbie's Awesome Pawsome Care!</p>
       <p>We have received your enquiry${subject ? ` regarding "${subject}"` : ''} and will get back to you as soon as possible.</p>
+      {/* VVVV OPTIONAL: Added referralSource to user confirmation email VVVV */}
+      ${referralSource ? `<p>For our records, you mentioned you heard about us via: ${referralSource}.</p>` : ''}
       <p>If your matter is urgent, please allow up to 24-48 hours for a response, especially during busy periods.</p>
       <p>Best regards,</p>
       <p>The Team at Debbie's Pawsome Care</p>
