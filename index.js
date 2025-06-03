@@ -348,7 +348,7 @@ app.post('/api/booking-request', async (req, res) => {
       <hr>
       <p><strong>Service Interested In:</strong> ${serviceName}</p>
       <p><strong>Preferred Date/Time:</strong> ${preferredDateTime}</p>
-      {/* VVVV ADDED THIS LINE for referralSource VVVV */}
+      
       <p><strong>How they heard about us:</strong> ${referralSource || 'Not specified'}</p>
       <p><strong>Additional Notes/Special Requirements:</strong></p>
       <pre style="white-space: pre-wrap; word-wrap: break-word;">${notes || 'None'}</pre>
@@ -376,7 +376,7 @@ app.post('/api/booking-request', async (req, res) => {
         <li><strong>Pet Type:</strong> ${petType || 'Not specified'}</li>
         <li><strong>Service:</strong> ${serviceName}</li>
         <li><strong>Preferred Date/Time:</strong> ${preferredDateTime}</li>
-        {/* VVVV OPTIONAL: Added referralSource to user confirmation email VVVV */}
+        {
         ${referralSource ? `<li><strong>How you heard about us:</strong> ${referralSource}</li>` : ''}
         <li><strong>Notes:</strong> <pre style="white-space: pre-wrap; word-wrap: break-word;">${notes || 'None'}</pre></li>
       </ul>
@@ -455,7 +455,7 @@ app.post('/api/general-enquiry', async (req, res) => {
       <h2>New General Enquiry:</h2>
       <p><strong>From:</strong> ${name} (<a href="mailto:${email}">${email}</a>)</p>
       <p><strong>Subject:</strong> ${subject || 'Not provided'}</p>
-      {/* VVVV ADDED THIS LINE for referralSource VVVV */}
+      
       <p><strong>How they heard about us:</strong> ${referralSource || 'Not specified'}</p>
       <hr>
       <p><strong>Message:</strong></p>
@@ -474,7 +474,7 @@ app.post('/api/general-enquiry', async (req, res) => {
       <p>Hi ${name},</p>
       <p>Thank you for reaching out to Debbie's Awesome Pawsome Care!</p>
       <p>We have received your enquiry${subject ? ` regarding "${subject}"` : ''} and will get back to you as soon as possible.</p>
-      {/* VVVV OPTIONAL: Added referralSource to user confirmation email VVVV */}
+      
       ${referralSource ? `<p>For our records, you mentioned you heard about us via: ${referralSource}.</p>` : ''}
       <p>If your matter is urgent, please allow up to 24-48 hours for a response, especially during busy periods.</p>
       <p>Best regards,</p>
