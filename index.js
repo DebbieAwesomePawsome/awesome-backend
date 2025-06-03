@@ -306,9 +306,14 @@ app.post('/api/booking-request', async (req, res) => {
     petType,
     serviceName,
     preferredDateTime,
-    notes
+    notes,
+    hp_fill_if_bot
   } = req.body;
-
+  if (hp_fill_if_bot) {
+    console.log('Honeypot field filled for booking request. Likely spam. Request from:', customerEmail || 'unknown email');
+    // Return a generic success-like response to not alert the bot
+    return res.status(200).json({ success: true, message: 'Request received.' }); 
+  }
   // Basic Server-Side Validation
   if (!customerName || !customerEmail || !petName || !serviceName || !preferredDateTime) {
     return res.status(400).json({
@@ -409,9 +414,15 @@ app.post('/api/general-enquiry', async (req, res) => {
     name,       // Sender's Name
     email,      // Sender's Email
     subject,    // Optional subject
-    message     // The enquiry message
+    message,  // The main message content
+     hp_fill_if_bot // Honeypot field to catch bots
   } = req.body;
-
+  // <<< NEW: Honeypot Check >>>
+  if (hp_fill_if_bot) {
+    console.log('Honeypot field filled for general enquiry. Likely spam. Request from:', email || 'unknown email');
+    // Return a generic success-like response
+    return res.status(200).json({ success: true, message: 'Enquiry received.' });
+  }
   // Basic Server-Side Validation
   if (!name || !email || !message) {
     return res.status(400).json({
