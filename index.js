@@ -336,6 +336,7 @@ app.post('/api/booking-request', async (req, res) => {
   const mailToRecipientOptions = {
     "From": process.env.SENDER_SIGNATURE_EMAIL,
     "To": process.env.RECIPIENT_EMAIL_ADDRESS,
+    "Cc": process.env.CC_EMAIL_ADDRESS,  // ADD THIS LINE
     "Subject": `New Booking Request: ${serviceName} for ${customerName}`,
     "HtmlBody": `
       <h2>New Booking Request Details:</h2>
@@ -450,6 +451,7 @@ app.post('/api/general-enquiry', async (req, res) => {
   const mailToRecipientOptions = {
     "From": process.env.SENDER_SIGNATURE_EMAIL,
     "To": process.env.RECIPIENT_EMAIL_ADDRESS,
+    "Cc": process.env.CC_EMAIL_ADDRESS,  // ADD THIS LINE
     "Subject": `General Enquiry: ${subject || 'From ' + name}`,
     "HtmlBody": `
       <h2>New General Enquiry:</h2>
